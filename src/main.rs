@@ -1,8 +1,8 @@
-#[macro_use]
-extern crate mysql;
-// ...
+use mysql::*;
+use mysql::prelude::*;
+use rand::thread_rng;
+use rand::Rng;
 
-use mysql as my;
 use std::time::{Instant};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,17 +22,22 @@ fn main() {
 }
 
 
-fn insert() {
-    // See docs on the `OptsBuilder`'s methods for the list of options available via URL.
-    let pool = my::Pool::new("mysql://root:admin@localhost:3306/test").unwrap();
+fn  insert() {
+
+    let url = "mysql://root:admin@localhost:3306/test";
+
+    let pool = Pool::new(url).unwrap();
+
+    let mut conn = pool.get_conn().unwrap();
+
 
     // Let's create payment table.
     // Unwrap just to make sure no error happened.
-    pool.prep_exec(r"CREATE TABLE rust_table (
+    conn.query_drop(r"CREATE TABLE rust_table (
                          customer_id int not null,
                          amount int not null,
                          account_name text
-                     )", ()).unwrap();
+                     )").unwrap();
 
     /*let payments = vec![
         Payment { customer_id: 1, amount: 2, account_name: None },
@@ -43,27 +48,27 @@ fn insert() {
     ];*/
     let mut payments = Vec::new();
 
-    for i in 0..20000 {
-        payments.push(Payment { customer_id: i as i32, amount: 2, account_name: None });
+    let mut rng = thread_rng();
+
+    for i in 0..2000000 {
+        payments.push([i as i32, rng.gen_range(0, 20000), 0 ]);
     }
 
+    println!("finished");
     // Let's insert payments to the database
     // We will use into_iter() because we do not need to map Stmt to anything else.
     // Also we assume that no error happened in `prepare`.
-    for mut stmt in pool.prepare(r"INSERT INTO rust_table
+    conn.exec_batch(r"INSERT INTO rust_table
                                        (customer_id, amount, account_name)
                                    VALUES
-                                       (:customer_id, :amount, :account_name)").into_iter() {
-        for p in payments.iter() {
-            // `execute` takes ownership of `params` so we pass account name by reference.
-            // Unwrap each result just to make sure no errors happened.
-            stmt.execute(params!{
-                "customer_id" => p.customer_id,
-                "amount" => p.amount,
-                "account_name" => &p.account_name,
-            }).unwrap();
-        }
-    }
+                                       (:customer_id, :amount, :account_name)",
+                                        payments.iter().map(|p| params! {
+                                            "customer_id" => p[0],
+                                            "amount" => p[1],
+                                            "account_name" => p[2],
+                                        })
+    ).unwrap();
 
     println!("Yay!");
+
 }

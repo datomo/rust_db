@@ -1,5 +1,6 @@
 import mysql.connector
 import time
+import random
 
 # database variables
 user = 'root'
@@ -25,8 +26,9 @@ def insert():
     db.commit()
 
     payments = []
-    for i in range(20000):
-        pay = Payment(i, 2, None)
+    for i in range(2000000):
+        n = random.randint(1,20000)
+        pay = Payment(i, n, None)
         payments.append( Payment.to_list(pay))
 
     db.querymany("INSERT INTO python_table VALUES(%s,%s,%s)", payments)
