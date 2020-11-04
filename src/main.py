@@ -9,9 +9,43 @@ database = 'test'
 
 def main():
     now = time.time()
-    insert()
+    #insert()
+    open_write()
     new_now = time.time()
     print(new_now - now)
+
+def open_write(): 
+    
+    file1 = open("../arcos_all_washpost.tsv", "r")
+
+    out = open('out.txt', 'a+')
+
+    counter = 0
+
+    for _ in file1.readlines():
+        counter += 1
+
+    print("len is {}".format(counter))
+
+    file1.close()
+    file1 = open("../arcos_all_washpost.tsv", "r")
+
+    i = 0
+
+    while True:
+
+        line = file1.readline()
+
+        if not line:
+            break
+        
+        out.write(",".join(line.strip().split("\t"))+ "]\n");
+
+        if i%50000000 == 0:
+            print("at line: {}".format(i))
+        i += 1
+
+    file1.close()
 
 def insert():
     print("hi")
@@ -26,7 +60,7 @@ def insert():
     db.commit()
 
     payments = []
-    for i in range(2000000):
+    for i in range(20000000):
         n = random.randint(1,20000)
         pay = Payment(i, n, None)
         payments.append( Payment.to_list(pay))
