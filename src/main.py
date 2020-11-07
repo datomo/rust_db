@@ -9,8 +9,9 @@ database = 'test'
 
 def main():
     now = time.time()
-    #insert()
-    open_write()
+    insert(10000000)
+    #open_write()
+    #insert_once(10000000, 1000000)
     new_now = time.time()
     print(new_now - now)
 
@@ -47,7 +48,7 @@ def open_write():
 
     file1.close()
 
-def insert():
+def insert(amount:int):
     print("hi")
     db = Database()
 
@@ -60,7 +61,7 @@ def insert():
     db.commit()
 
     payments = []
-    for i in range(20000000):
+    for i in range(amount):
         n = random.randint(1,20000)
         pay = Payment(i, n, None)
         payments.append( Payment.to_list(pay))
@@ -70,6 +71,50 @@ def insert():
     db.commit()
     db.close_connection()
 
+
+def insert_once(amount:int, chunk:int):
+
+    db = Database()
+
+    db.query('''CREATE TABLE python_table (
+                         customer_id int not null,
+                         amount int not null,
+                         account_name text
+                     )''')
+
+    db.commit()
+
+    payments = "INSERT INTO python_table VALUES"
+
+    executed = False
+
+    for i in range(amount):
+        n = random.randint(1,20000)
+        pay = Payment(i, n, None)
+        #payments.append( Payment.to_list(pay))
+        if i != 0 and not executed:
+            payments += ",({}, {}, {})".format(i, n, 0)
+        else:
+            payments += "({}, {}, {})".format(i, n, 0)
+
+        executed = False
+
+        if i%1000000 == 0:
+            print("at line: {}".format(i))
+            db.query(payments)
+            db.commit()
+            payments = "INSERT INTO python_table VALUES"
+
+            executed = True
+
+    if not executed:
+        db.query(payments)
+        db.commit()
+    
+
+    
+
+    
 
 class Payment: 
     def __init__(self, customer_id, amount, account_name):
@@ -108,7 +153,7 @@ class Database:
             self.db.commit()
         except mysql.connector.Error as e:
             print("Something went wrong: {}".format(e))
-            print(query)
+            #print(query)
 
     def querymany(self, query, data_list) -> str:
         try:

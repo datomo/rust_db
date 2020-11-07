@@ -1,12 +1,12 @@
-use mysql::*;
 use mysql::prelude::*;
+use mysql::*;
 use rand::thread_rng;
 use rand::Rng;
 
-use std::time::{Instant};
+use std::time::Instant;
 
+use std::fs::{OpenOptions};
 use std::io::{self, prelude::*, BufReader};
-use std::fs::OpenOptions;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Payment {
@@ -15,92 +15,273 @@ struct Payment {
     account_name: Option<String>,
 }
 
-
 fn main() {
     let now = Instant::now();
-    // insert();
-    open_write().unwrap();
+    //insert(1000000);
+    //open_write().unwrap();
+    //insert_once(10000000, 4000000);
+    //open_write_batch(100000).unwrap();
+    insert_infile(10000);
     let new_now = Instant::now();
     println!("{:?}", new_now.checked_duration_since(now));
-
 }
 
-
 fn open_write() -> io::Result<()> {
-    let file = OpenOptions::new().read(true).append(true).create(true).open("../arcos_all_washpost.tsv")?;
-    let file_len = OpenOptions::new().read(true).append(true).create(true).open("../arcos_all_washpost.tsv")?;
-    let mut out = OpenOptions::new().read(true).append(true).create(true).open("../out.txt")?;
+    let path = "../arcos_all_washpost.tsv";
+
+    let file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open("../arcos_all_washpost.tsv")?;
+    let mut out = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open("../out.csv")?;
     let reader = BufReader::new(file);
-    let reader_len = BufReader::new(file_len);
 
-    let mut amount:i64 = 0;
-    for _ in reader_len.lines() {
-        amount += 1;
-    }
 
-    println!("len is: {}", amount);
+    count_lines(path);
+
 
     for (i, line) in reader.lines().enumerate() {
-        //println!("{}", sp);
-        out.write_all(line?.split("\t").collect::<Vec<&str>>().join(",").as_bytes())?;
+        out.write(
+            line?
+                .split("\t")
+                .collect::<Vec<&str>>()
+                .join(",")
+                .as_bytes(),
+        )?;
 
-        //out.sync_all()?;
-        if i%50000000 == 0 {
+        if i % 50000000 == 0 && i != 0 {
             println!("at line: {}", i)
         }
     }
 
+    Ok(())
+}
+
+fn count_lines(path: &str) {
+    let file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path).unwrap();
+
+    let reader = BufReader::new(file);
+
+    println!("len is: {}", reader.lines().count());
+}
+
+fn open_write_batch(chunk: i32) -> io::Result<()> {
+    let path = "arcos_all_washpost.tsv";
+
+    let file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path)?;
+    let mut out = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open("out.csv")?;
+
+    let reader = BufReader::new(file);
+
+
+    count_lines(path);
+
+    let mut write = "".to_string();
+    let mut executed = false;
+
+    for (i, line) in reader.lines().enumerate() {
+        executed = false;
+
+        write.push_str(&(line?.split("\t").collect::<Vec<&str>>().join(",") + "\n"));
+        //out.sync_all()?;
+        if i % chunk as usize == 0 && i != 0 {
+            println!("at line: {}", i);
+
+            out.write(write.as_bytes())?;
+            write = "".to_string();
+
+            executed = true;
+        }
+    }
+
+    if !executed {
+        out.write(write.as_bytes())?;
+    }
 
     Ok(())
 }
 
-fn  insert() {
-
+fn insert_once(amount: i32, chunk: i32) {
     let url = "mysql://root:admin@localhost:3306/test";
 
     let pool = Pool::new(url).unwrap();
 
     let mut conn = pool.get_conn().unwrap();
 
-
-    // Let's create payment table.
-    // Unwrap just to make sure no error happened.
-    conn.query_drop(r"CREATE TABLE rust_table (
+    conn.query_drop(
+        r"CREATE TABLE rust_table (
                          customer_id int not null,
                          amount int not null,
                          account_name text
-                     )").unwrap();
+                     )",
+    ).unwrap();
 
-    /*let payments = vec![
-        Payment { customer_id: 1, amount: 2, account_name: None },
-        Payment { customer_id: 3, amount: 4, account_name: Some("foo".into()) },
-        Payment { customer_id: 5, amount: 6, account_name: None },
-        Payment { customer_id: 7, amount: 8, account_name: None },
-        Payment { customer_id: 9, amount: 10, account_name: Some("bar".into()) },
-    ];*/
+    conn.query_drop(r"SET GLOBAL max_allowed_packet=107374182400000000")
+        .unwrap();
+
+    let mut rng = thread_rng();
+
+    let mut payments = "INSERT INTO rust_table VALUES".to_string();
+    let mut executed = false;
+
+    for i in 0..amount {
+        if i != 0 && !executed {
+            payments.push_str(&format!(
+                ",({}, {}, {})",
+                i as i32,
+                rng.gen_range(0, 20000),
+                0
+            ))
+        } else {
+            payments.push_str(&format!(
+                "({}, {}, {})",
+                i as i32,
+                rng.gen_range(0, 20000),
+                0
+            ))
+        }
+
+        executed = false;
+
+        if i % chunk == 0 {
+            conn.query_drop(payments).unwrap();
+            println!("at line: {}\n executed", i);
+            payments = "INSERT INTO rust_table VALUES".to_string();
+            executed = true;
+        }
+    }
+    if !executed {
+        conn.query_drop(payments).unwrap();
+    }
+}
+
+fn insert_infile(amount: i32) -> Result<()> {
+    let path = "arcos_all_washpost.tsv";
+
+    let file = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open(path)?;
+    let mut out = OpenOptions::new()
+        .read(true)
+        .append(true)
+        .create(true)
+        .open("out.csv")?;
+
+    let reader = BufReader::new(file);
+
+    for line in reader.lines() {
+        out.write((line.unwrap() + "\n").as_bytes());
+    }
+
+    let mut conn = generate_connection();
+
+    conn.query_drop(
+        r"CREATE TABLE rust_final_table (
+                         REPORTER_DEA_NO VARCHAR(50),
+                         REPORTER_BUS_ACT int,
+                         REPORTER_NAME VARCHAR(50),
+                         REPORTER_ADDL_CO_INFO,
+                         REPORTER_ADDRESS1 VARCHAR(50),
+                         REPORTER_ADDRESS2 VARCHAR(50),
+                         REPORTER_CITY VARCHAR(50),
+                         REPORTER_STATE VARCHAR(50),
+                         REPORTER_ZIP int,
+                         REPORTER_COUNTY VARCHAR(50),
+                         BUYER_DEA_NO VARCHAR(50),
+                         BUYER_BUS_ACT VARCHAR(50),
+                         BUYER_NAME VARCHAR(50),
+                         BUYER_ADDL_CO_INFO VARCHAR(50),
+                         BUYER_ADDRESS1 VARCHAR(50),
+                         BUYER_ADDRESS2 VARCHAR(50),
+                         BUYER_CITY VARCHAR(50),
+                         BUYER_STATE VARCHAR(50),
+                         BUYER_ZIP int VARCHAR(50),
+                         BUYER_COUNTY VARCHAR(50),
+                         TRANSACTION_CODE VARCHAR(50),
+                         DRUG_CODE int,
+                         NDC_NO VARCHAR(50),
+                         DRUG_NAME VARCHAR(50),
+                         QUANTITY VARCHAR(50),
+                         UNIT VARCHAR(50),
+                         ACTION_INDICATOR VARCHAR(50),
+                         ORDER_FORM_NO VARCHAR(50),
+                         CORRECTION_NO VARCHAR(50),
+                         STRENGTH VARCHAR(50),
+                         TRANSACTION_DATE VARCHAR(50),
+                         CALC_BASE_WT_IN_GM VARCHAR(50),
+                         DOSAGE_UNIT VARCHAR(50),
+                         TRANSACTION_ID VARCHAR(50),
+                         Product_Name VARCHAR(50),
+                         Ingredient_Name VARCHAR(50),
+                         Measure VARCHAR(50),
+                         MME_Conversion_Factor VARCHAR(50),
+                         Combined_Labeler_Name VARCHAR(50),
+                         Revised_Company_Name VARCHAR(50),
+                         Reporter_family VARCHAR(50),
+                         dos_str VARCHAR(50)
+                     )",
+    ).unwrap();
+
+
+    Ok(())
+}
+
+fn generate_connection() -> PooledConn {
+    let url = "mysql://root:admin@localhost:3306/test";
+
+    let pool = Pool::new(url).unwrap();
+
+   pool.get_conn().unwrap()
+}
+
+fn insert(amount: i32) {
+    let url = "mysql://root:admin@localhost:3306/test";
+
+    let pool = Pool::new(url).unwrap();
+
+    let mut conn = pool.get_conn().unwrap();
+
+    conn.query_drop(
+        r"CREATE TABLE rust_table (
+                         customer_id int not null,
+                         amount int not null,
+                         account_name text
+                     )",
+    ).unwrap();
+
     let mut payments = Vec::new();
 
     let mut rng = thread_rng();
 
-    for i in 0..20000000 {
-        payments.push([i as i32, rng.gen_range(0, 20000), 0 ]);
+    for i in 0..amount {
+        payments.push([i as i32, rng.gen_range(0, 20000), 0]);
     }
 
     println!("finished");
-    // Let's insert payments to the database
-    // We will use into_iter() because we do not need to map Stmt to anything else.
-    // Also we assume that no error happened in `prepare`.
-    conn.exec_batch(r"INSERT INTO rust_table
-                                       (customer_id, amount, account_name)
-                                   VALUES
-                                       (:customer_id, :amount, :account_name)",
-                                        payments.iter().map(|p| params! {
-                                            "customer_id" => p[0],
-                                            "amount" => p[1],
-                                            "account_name" => p[2],
-                                        })
-    ).unwrap();
+
+    "INSERT INTO rust_table (customer_id, amount, account_name) VALUES (?, ?, ?)"
+        .with(payments.iter().map(|p| (p[0], p[1], p[2])))
+        .batch(&mut conn)
+        .unwrap();
 
     println!("Yay!");
-
 }
