@@ -173,6 +173,7 @@ fn insert_once(amount: i32, chunk: i32) {
 }
 
 fn insert_infile(amount: i32) -> Result<()> {
+
     let path = "arcos_all_washpost.tsv";
 
     let file = OpenOptions::new()
@@ -184,22 +185,35 @@ fn insert_infile(amount: i32) -> Result<()> {
         .read(true)
         .append(true)
         .create(true)
-        .open("out.csv")?;
+        .open("out1.csv")?;
 
     let reader = BufReader::new(file);
 
-    for line in reader.lines() {
+    for (i,line) in reader.lines().enumerate() {
         out.write((line.unwrap() + "\n").as_bytes());
+        if i == 90000000 {
+            out = OpenOptions::new()
+                .read(true)
+                .append(true)
+                .create(true)
+                .open("out2.csv")?;
+        }
     }
 
+    println!("finished parsing...");
+
     let mut conn = generate_connection();
+
+    conn.query_drop(r"SET GLOBAL local_infile = 'ON'");
+
+    conn.query_drop(r"DROP TABLE IF EXISTS rust_final_table").unwrap();
 
     conn.query_drop(
         r"CREATE TABLE rust_final_table (
                          REPORTER_DEA_NO VARCHAR(50),
                          REPORTER_BUS_ACT int,
                          REPORTER_NAME VARCHAR(50),
-                         REPORTER_ADDL_CO_INFO,
+                         REPORTER_ADDL_CO_INFO VARCHAR(50),
                          REPORTER_ADDRESS1 VARCHAR(50),
                          REPORTER_ADDRESS2 VARCHAR(50),
                          REPORTER_CITY VARCHAR(50),
@@ -214,7 +228,7 @@ fn insert_infile(amount: i32) -> Result<()> {
                          BUYER_ADDRESS2 VARCHAR(50),
                          BUYER_CITY VARCHAR(50),
                          BUYER_STATE VARCHAR(50),
-                         BUYER_ZIP int VARCHAR(50),
+                         BUYER_ZIP int,
                          BUYER_COUNTY VARCHAR(50),
                          TRANSACTION_CODE VARCHAR(50),
                          DRUG_CODE int,
@@ -241,6 +255,10 @@ fn insert_infile(amount: i32) -> Result<()> {
                      )",
     ).unwrap();
 
+    println!("created table...");
+
+    conn.query_drop("LOAD DATA LOCAL INFILE 'C:/Users/davel/Desktop/git/rust_db/out.csv' INTO TABLE test.rust_final_table FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n'");
+
 
     Ok(())
 }
@@ -250,7 +268,7 @@ fn generate_connection() -> PooledConn {
 
     let pool = Pool::new(url).unwrap();
 
-   pool.get_conn().unwrap()
+    pool.get_conn().unwrap()
 }
 
 fn insert(amount: i32) {
